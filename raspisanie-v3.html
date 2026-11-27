@@ -1,0 +1,660 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Расписание А4</title>
+<style>
+:root{
+  --app-h:100vh; --app-top:0px;
+  --safe-t:max(env(safe-area-inset-top,0px), calc(var(--tg-safe-area-inset-top,0px) + var(--tg-content-safe-area-inset-top,0px)));
+  --safe-b:max(env(safe-area-inset-bottom,0px), calc(var(--tg-safe-area-inset-bottom,0px) + var(--tg-content-safe-area-inset-bottom,0px)));
+  --safe-l:max(env(safe-area-inset-left,0px), var(--tg-safe-area-inset-left,0px));
+  --safe-r:max(env(safe-area-inset-right,0px), var(--tg-safe-area-inset-right,0px));
+  --accent:#1f6feb;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:#e9edf2;color:#17202a;
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;overscroll-behavior:none}
+button{font:inherit;font-size:16px;font-weight:600;min-height:46px;padding:6px 10px;border:1px solid #c3ccd8;
+  border-radius:10px;background:#fff;color:inherit;cursor:pointer;touch-action:manipulation}
+button:hover{border-color:var(--accent)}
+button:active{transform:translateY(1px)}
+button:disabled{opacity:.4;cursor:default}
+button:focus-visible{outline:3px solid var(--accent);outline-offset:1px}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.danger{color:#b42318}
+button.danger.primary{background:#b42318;border-color:#b42318;color:#fff}
+[hidden]{display:none!important}
+
+#app{position:fixed;left:0;right:0;top:var(--app-top);height:var(--app-h);display:flex;flex-direction:column;
+  padding:var(--safe-t) var(--safe-r) var(--safe-b) var(--safe-l)}
+#stage{flex:1;min-height:0;min-width:0;overflow-y:auto;overflow-x:hidden;padding:12px;scrollbar-gutter:stable}
+#holder{position:relative;margin:0 auto;overflow:hidden;box-shadow:0 4px 22px rgba(20,35,60,.2);background:#fff}
+
+/* ---------- Лист А4 (размер в пикселях при 96 dpi) ---------- */
+#sheet{position:absolute;left:0;top:0;width:794px;height:1123px;padding:36px;background:#fff;color:#000;
+  display:flex;flex-direction:column;transform-origin:0 0}
+body.landscape #sheet{width:1123px;height:794px}
+#title{flex:none;width:100%;height:38px;margin-bottom:8px;border:0;border-radius:4px;background:transparent;color:#000;
+  text-align:center;font-family:inherit;font-weight:700;font-size:21px;padding:0 8px}
+#title::placeholder{color:#a8b0bb;font-weight:400;font-size:19px}
+#title:focus{outline:2px solid var(--accent)}
+#grid{flex:1;min-height:0;display:grid;border-top:2px solid #111;border-left:2px solid #111}
+.cell{position:relative;min-width:0;min-height:0;overflow:hidden;display:flex;align-items:center;
+  border-right:2px solid #111;border-bottom:2px solid #111;cursor:text}
+.cell textarea{display:block;width:100%;max-height:100%;margin:0;padding:1px;border:0;outline:0;resize:none;overflow:hidden;
+  background:transparent;color:#000;text-align:center;font-family:inherit;font-weight:500;line-height:1.2;
+  overflow-wrap:break-word;border-radius:0}
+.cell textarea.multi{text-align:left;padding-left:4px}
+.cell.head{justify-content:center;font-weight:700;font-size:14px;cursor:default;user-select:none}
+.cell textarea.name{text-align:left;padding-left:8px}
+.cell.active{background:#e3efff;box-shadow:inset 0 0 0 3px var(--accent)}
+.cell.over textarea{overflow-y:auto}
+.cell.over::after{content:"";position:absolute;top:0;right:0;border-top:12px solid #d92d20;border-left:12px solid transparent}
+
+/* ---------- Панель кнопок ---------- */
+#panel{flex:none;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;padding:8px 10px;background:#f8fafc;border-top:1px solid #cfd7e2}
+.group{display:contents}
+.group .wide{grid-column:span 2}
+#panel button{font-size:14px;padding:4px 2px}
+.group h2,#size,#status{display:none}
+.seg{display:flex}
+.seg button{flex:1;border-radius:0;padding:6px 2px}
+.seg button:first-child{border-radius:10px 0 0 10px}
+.seg button:last-child{border-radius:0 10px 10px 0;border-left:0}
+.seg button[aria-pressed="true"]{background:#dbe9ff;border-color:var(--accent);color:#0b4ab0}
+#warn{grid-column:1/-1;margin:0;color:#b42318;font-size:14px}
+
+@media (min-width:900px), (min-width:560px) and (max-height:600px) and (orientation:landscape){
+  #app{flex-direction:row}
+  #panel{width:clamp(220px,25vw,300px);overflow-y:auto;align-content:start;gap:10px;padding:16px;border-top:0;border-left:1px solid #cfd7e2}
+  .group{display:grid;grid-template-columns:1fr 1fr;gap:8px;grid-column:1/-1;margin-bottom:10px}
+  .group h2{display:block;grid-column:1/-1;margin:0;font-size:14px;color:#5b6878}
+  .group .wide{grid-column:1/-1}
+  #panel button{font-size:16px}
+  #size,#status{display:block;grid-column:1/-1;margin:0;font-size:14px;color:#5b6878;text-align:center}
+}
+
+/* ---------- Крупный ввод на телефоне ---------- */
+#entry{flex:none;padding:8px 10px;background:#f8fafc;border-top:2px solid var(--accent)}
+#where{font-size:13px;color:#5b6878;margin-bottom:5px}
+.entry-main{display:flex;gap:6px}
+.entry-main button{width:56px;flex:none;font-size:22px}
+#big{flex:1;min-width:0;height:56px;padding:8px 10px;font-family:inherit;font-size:22px;line-height:1.25;
+  border:2px solid var(--accent);border-radius:10px;resize:none;background:#fff;color:#000}
+.entry-keys{display:grid;grid-template-columns:1.3fr .7fr .7fr 1.5fr 1.2fr;gap:6px;margin-top:6px}
+.entry-keys button{padding:4px 2px;font-size:15px}
+body.compact .cell:not(.head){cursor:pointer}
+body.compact .cell textarea{pointer-events:none}
+body.editing #panel{display:none}
+@media (min-width:900px), (min-width:560px) and (max-height:600px) and (orientation:landscape){ body.editing #app{flex-direction:column} }
+
+/* ---------- Окно подтверждения и уведомление ---------- */
+#modal{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(10,20,35,.5)}
+#modal .box{width:100%;max-width:380px;padding:20px;background:#fff;border-radius:16px}
+#modal p{margin:0 0 18px;font-size:18px;line-height:1.4}
+#modal .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+#toast{position:fixed;z-index:15;left:50%;top:calc(var(--safe-t) + 10px);transform:translateX(-50%);display:flex;align-items:center;gap:12px;
+  width:max-content;max-width:calc(100% - 24px);padding:8px 8px 8px 16px;background:#17202a;color:#fff;border-radius:12px}
+#toast button{color:#17202a;min-height:40px}
+
+/* ---------- Печать: только лист ---------- */
+@media print{
+  html,body{height:auto;overflow:visible;background:#fff;margin:0;padding:0}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  #panel,#entry,#modal,#toast{display:none!important}
+  #app{position:static;display:block;height:auto;padding:0}
+  #stage{overflow:visible;padding:0}
+  #holder{width:auto!important;height:auto!important;margin:0;overflow:visible;box-shadow:none}
+  #sheet{position:relative;transform:none!important;width:793px;height:1120px;overflow:hidden;break-inside:avoid}
+  body.landscape #sheet{width:1122px;height:791px}
+  body.safari #sheet{zoom:.9}
+  #title:placeholder-shown{visibility:hidden}
+  #title{outline:0!important}
+  .cell.active{background:transparent;box-shadow:none}
+  .cell.over::after{display:none}
+}
+</style>
+<style id="pageStyle"></style>
+</head>
+<body>
+<div id="app">
+  <main id="stage">
+    <div id="holder">
+      <div id="sheet">
+        <input id="title" maxlength="80" placeholder="Название расписания" aria-label="Название расписания" autocomplete="off">
+        <div id="grid"></div>
+      </div>
+    </div>
+  </main>
+
+  <aside id="panel">
+    <div class="group">
+      <h2>Размер таблицы</h2>
+      <button id="addRow">+ Строка</button>
+      <button id="delRow">− Строка</button>
+      <button id="addCol">+ Столбец</button>
+      <button id="delCol">− Столбец</button>
+      <p id="size"></p>
+    </div>
+    <div class="group">
+      <h2>Лист и печать</h2>
+      <div class="seg wide" role="group" aria-label="Положение листа">
+        <button id="portrait">Портрет</button>
+        <button id="landscape">Альбом</button>
+      </div>
+      <button id="print" class="primary wide">Печать / PDF</button>
+    </div>
+    <div class="group">
+      <h2>Начать заново</h2>
+      <button id="clear" class="danger wide">Очистить</button>
+      <button id="fresh" class="wide">Новый шаблон 7×7</button>
+    </div>
+    <p id="status">Всё сохраняется само</p>
+    <p id="warn" hidden>Не получается сохранить данные в этом браузере. Распечатайте лист до закрытия окна.</p>
+  </aside>
+
+  <section id="entry" hidden>
+    <div id="where"></div>
+    <div class="entry-main">
+      <button id="prev" aria-label="Предыдущая ячейка">◀</button>
+      <textarea id="big" rows="1" maxlength="300" aria-label="Текст ячейки" enterkeyhint="next"></textarea>
+      <button id="next" aria-label="Следующая ячейка">▶</button>
+    </div>
+    <div class="entry-keys">
+      <button id="mode">123</button>
+      <button data-ins=":">:</button>
+      <button data-ins="–">–</button>
+      <button id="newline">Новая строка</button>
+      <button id="done" class="primary">Готово</button>
+    </div>
+  </section>
+</div>
+
+<div id="modal" hidden role="dialog" aria-modal="true" aria-labelledby="question">
+  <div class="box">
+    <p id="question"></p>
+    <div class="row"><button id="no">Отмена</button><button id="yes" class="primary"></button></div>
+  </div>
+</div>
+<div id="toast" hidden role="status"><span id="toastText"></span><button id="undo">Вернуть</button></div>
+
+<script>
+(function () {
+'use strict';
+
+var KEY = 'a4-schedule-v1';
+var MAX_ROWS = 30, MAX_COLS = 26, MAX_TEXT = 300;   // столбцы считаются вместе с «Имя»
+var MAX_DATA_ROWS = MAX_ROWS - 1;           // верхняя строка с цифрами заполняется сама
+var NAME_WIDTH = 150, HEAD_HEIGHT = 40;     // постоянная ширина столбца имён и высота строки цифр
+var $ = function (id) { return document.getElementById(id); };
+var sheet = $('sheet'), grid = $('grid'), stage = $('stage'), holder = $('holder'),
+    titleInput = $('title'), big = $('big'), entry = $('entry');
+
+var inputs = [];            // inputs[строка][столбец]
+var active = null;          // {r, c}
+var compact = false;        // крупный ввод внизу (телефон)
+var tg = null;
+var launchHash = location.hash;
+
+/* ===== Данные и сохранение ===== */
+function blank(rows, cols) {
+  var cells = [];
+  for (var r = 0; r < rows; r++) cells.push(new Array(cols).fill(''));
+  return { v: 3, title: '', orientation: 'portrait', cells: cells };
+}
+
+function normalize(data) {
+  if (!data || !Array.isArray(data.cells) || !data.cells.length || !Array.isArray(data.cells[0])) return null;
+  var source = data.cells, cols = source[0].length;
+  if (data.v !== 3) {
+    // лист из прежней версии: пустая верхняя строка заменяется цифрами,
+    // а строка с записями остаётся и сдвигается под цифры
+    var replaceable = [].concat(source[0]).every(function (v, c) {
+      v = String(v || '').trim();
+      return !v || v === String(c) || (c === 0 && (v === '№' || v.toLowerCase() === 'имя'));
+    });
+    if (replaceable) source = source.slice(1);
+    if (data.v === 2) cols++;   // вместо прежнего столбца номеров добавляется пустой справа
+  }
+  var rows = Math.max(1, Math.min(source.length, MAX_ROWS));
+  cols = Math.max(2, Math.min(cols, MAX_COLS));
+  var out = blank(rows, cols);
+  for (var r = 0; r < rows; r++)
+    for (var c = 0; c < cols; c++) {
+      var v = source[r] && source[r][c];
+      out.cells[r][c] = typeof v === 'string' ? v.slice(0, MAX_TEXT) : '';
+    }
+  out.title = typeof data.title === 'string' ? data.title.slice(0, 80) : '';
+  out.orientation = data.orientation === 'landscape' ? 'landscape' : 'portrait';
+  return out;
+}
+
+function load() {
+  try { return normalize(JSON.parse(localStorage.getItem(KEY))); } catch (e) { return null; }
+}
+
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(state)); $('warn').hidden = true; }
+  catch (e) { $('warn').hidden = false; }
+}
+
+var state = load() || blank(6, 7);
+var copy = function (o) { return JSON.parse(JSON.stringify(o)); };
+var rowsCount = function () { return state.cells.length; };
+var colsCount = function () { return state.cells[0].length; };
+var hasContent = function (s) {
+  return !!s.title.trim() || s.cells.some(function (row) { return row.some(function (v) { return v.trim(); }); });
+};
+
+/* ===== Отрисовка ===== */
+function place(r, c) {
+  return 'Строка ' + (r + 1) + ', ' + (c ? 'столбец ' + c : 'имя');
+}
+function render() {
+  var rows = rowsCount(), cols = colsCount();
+  var land = state.orientation === 'landscape';
+  document.body.classList.toggle('landscape', land);
+  $('pageStyle').textContent = '@page{size:A4 ' + state.orientation + ';margin:0}';
+  $('portrait').setAttribute('aria-pressed', String(!land));
+  $('landscape').setAttribute('aria-pressed', String(land));
+
+  grid.style.gridTemplateColumns = NAME_WIDTH + 'px repeat(' + (cols - 1) + ',minmax(0,1fr))';
+  grid.style.gridTemplateRows = HEAD_HEIGHT + 'px repeat(' + rows + ',minmax(0,1fr))';
+  grid.textContent = '';
+  inputs = [];
+  for (var h = 0; h < cols; h++) {        // верхняя строка: «Имя», 1, 2, 3…
+    var head = document.createElement('div');
+    head.className = 'cell head';
+    head.textContent = h ? h : 'Имя';
+    grid.appendChild(head);
+  }
+  for (var r = 0; r < rows; r++) {
+    inputs.push([]);
+    for (var c = 0; c < cols; c++) {
+      var cell = document.createElement('div');
+      cell.className = 'cell';
+      var t = document.createElement('textarea');
+      if (!c) t.className = 'name';
+      t.rows = 1; t.maxLength = MAX_TEXT; t.value = state.cells[r][c];
+      t.dataset.r = r; t.dataset.c = c;
+      t.spellcheck = false; t.autocomplete = 'off';
+      t.setAttribute('aria-label', place(r, c));
+      cell.appendChild(t); grid.appendChild(cell); inputs[r].push(t);
+    }
+  }
+  titleInput.value = state.title;
+  $('size').textContent = 'Сейчас: строк ' + (rows + 1) + ', столбцов ' + cols;
+  $('addRow').disabled = rows >= MAX_DATA_ROWS; $('delRow').disabled = rows <= 1;
+  $('addCol').disabled = cols >= MAX_COLS; $('delCol').disabled = cols <= 2;
+  layout();
+  fitAll();
+}
+
+/* Подбор размера шрифта, чтобы текст помещался в ячейку */
+var ruler = document.createElement('canvas').getContext('2d');
+function fit(t) {
+  var cell = t.parentNode, w = cell.clientWidth - (t.classList.contains('name') ? 12 : 3), h = cell.clientHeight;
+  t.classList.toggle('multi', t.value.indexOf('\n') >= 0);
+  cell.classList.remove('over');
+  var family = getComputedStyle(t).fontFamily;
+  var words = t.value.split(/\s+/);
+  var size = Math.max(8, Math.min(28, Math.floor((h - 4) / 1.25)));
+  for (;;) {
+    t.style.fontSize = size + 'px';
+    t.style.height = '0px';
+    var need = t.scrollHeight;
+    ruler.font = '500 ' + size + 'px ' + family;
+    var wide = words.some(function (word) { return ruler.measureText(word).width > w; });
+    if ((need <= h && !wide) || size <= 8) break;
+    size--;
+  }
+  t.style.height = Math.min(need, h) + 'px';
+  cell.classList.toggle('over', need > h);
+}
+function fitAll() { inputs.forEach(function (row) { row.forEach(fit); }); }
+
+/* Масштаб листа под ширину экрана */
+function layout() {
+  var land = state.orientation === 'landscape';
+  var w = land ? 1123 : 794, h = land ? 794 : 1123;
+  var avail = stage.clientWidth - 24;
+  var scale = Math.max(0.1, Math.min(avail / w, 1.25));
+  sheet.style.transform = 'scale(' + scale + ')';
+  holder.style.width = w * scale + 'px';
+  holder.style.height = h * scale + 'px';
+
+  var touch = window.matchMedia('(pointer: coarse)').matches;
+  // пока открыто нижнее поле, режим не меняем: ширина листа в этот момент другая
+  var nowCompact = (compact && active) ? touch : touch && scale < 0.9;
+  if (nowCompact !== compact) { compact = nowCompact; if (!compact) stopEditing(); }
+  document.body.classList.toggle('compact', compact);
+  inputs.forEach(function (row) {
+    row.forEach(function (t) { t.readOnly = compact; t.tabIndex = compact ? -1 : 0; });
+  });
+}
+
+/* ===== Выбор ячейки и переходы ===== */
+function mark(r, c) {
+  var old = grid.querySelector('.cell.active');
+  if (old) old.classList.remove('active');
+  active = { r: r, c: c };
+  inputs[r][c].parentNode.classList.add('active');
+}
+
+function go(r, c) {
+  mark(r, c);
+  if (compact) {
+    entry.hidden = false;
+    document.body.classList.add('editing');
+    big.value = state.cells[r][c];
+    $('where').textContent = place(r, c);
+    big.focus({ preventScroll: true });
+    big.select();
+    setTimeout(reveal, 60);
+  } else {
+    var t = inputs[r][c];
+    t.focus();
+    t.select();
+  }
+}
+
+function reveal() {
+  if (!active || !compact) return;
+  var cell = inputs[active.r][active.c].parentNode.getBoundingClientRect(), box = stage.getBoundingClientRect();
+  if (cell.top < box.top + 8 || cell.bottom > box.bottom - 8)
+    stage.scrollTop += (cell.top + cell.height / 2) - (box.top + box.height / 2);
+}
+
+function step(delta) {   // вправо / влево с переносом на соседнюю строку
+  if (!active) return false;
+  var cols = colsCount(), i = active.r * cols + active.c + delta;
+  if (i < 0 || i >= rowsCount() * cols) return false;
+  go(Math.floor(i / cols), i % cols);
+  return true;
+}
+
+function vertical(delta, wrap) {
+  if (!active) return;
+  var r = active.r + delta, c = active.c;
+  if (wrap && r >= rowsCount()) { r = 0; c++; }
+  if (wrap && r < 0) { r = rowsCount() - 1; c--; }
+  if (r >= 0 && r < rowsCount() && c >= 0 && c < colsCount()) go(r, c);
+}
+
+function stopEditing() {
+  entry.hidden = true;
+  document.body.classList.remove('editing');
+  if (document.activeElement === big) big.blur();
+  var old = grid.querySelector('.cell.active');
+  if (old) old.classList.remove('active');
+  active = null;
+}
+
+function onKey(e) {
+  if (e.isComposing) return;
+  var t = e.target, k = e.key;
+  if (k === 'Enter') {
+    if (e.shiftKey || e.altKey) {
+      if (e.altKey) { e.preventDefault(); insert(t, '\n'); }
+      return;   // Shift+Enter: новая строка внутри ячейки
+    }
+    e.preventDefault(); vertical(1, true); return;
+  }
+  if (k === 'Tab') { if (step(e.shiftKey ? -1 : 1)) e.preventDefault(); return; }
+  if (k === 'Escape') { if (compact) stopEditing(); else t.blur(); return; }
+  if (k.indexOf('Arrow') !== 0 || e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
+  var start = t.selectionStart, end = t.selectionEnd, len = t.value.length;
+  var whole = start === 0 && end === len;
+  if (!whole && start !== end) return;
+  if (k === 'ArrowLeft' && (whole || start === 0)) { e.preventDefault(); step(-1); }
+  else if (k === 'ArrowRight' && (whole || end === len)) { e.preventDefault(); step(1); }
+  else if (k === 'ArrowUp' && (whole || t.value.lastIndexOf('\n', start - 1) < 0 || start === 0)) { e.preventDefault(); vertical(-1); }
+  else if (k === 'ArrowDown' && (whole || t.value.indexOf('\n', end) < 0)) { e.preventDefault(); vertical(1); }
+}
+
+function insert(t, text) {
+  if (t.value.length - (t.selectionEnd - t.selectionStart) + text.length > MAX_TEXT) return;
+  t.setRangeText(text, t.selectionStart, t.selectionEnd, 'end');
+  t.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+grid.addEventListener('input', function (e) {
+  var t = e.target, r = +t.dataset.r, c = +t.dataset.c;
+  state.cells[r][c] = t.value; fit(t); save();
+});
+grid.addEventListener('keydown', onKey);
+grid.addEventListener('focusin', function (e) {
+  if (!compact) mark(+e.target.dataset.r, +e.target.dataset.c);
+});
+grid.addEventListener('focusout', function (e) {
+  if (!compact) e.target.parentNode.classList.remove('active');
+});
+grid.addEventListener('click', function (e) {
+  var cell = e.target.closest('.cell');
+  if (!cell || cell.classList.contains('head')) return;
+  var t = cell.firstChild;
+  // повторный щелчок по активной ячейке ставит курсор, первый выделяет всё
+  if (compact || e.target !== t) go(+t.dataset.r, +t.dataset.c);
+});
+grid.addEventListener('mousedown', function (e) {
+  var t = e.target;
+  if (!compact && t.tagName === 'TEXTAREA' && document.activeElement !== t) {
+    e.preventDefault(); go(+t.dataset.r, +t.dataset.c);
+  }
+});
+
+titleInput.addEventListener('input', function () { state.title = titleInput.value; save(); });
+titleInput.addEventListener('keydown', function (e) {
+  if (e.key === 'Enter') { e.preventDefault(); go(0, 0); }
+});
+titleInput.addEventListener('focus', function () { if (compact) stopEditing(); });
+
+/* Нижнее поле ввода (телефон) */
+big.addEventListener('input', function () {
+  if (!active) return;
+  var t = inputs[active.r][active.c];
+  t.value = state.cells[active.r][active.c] = big.value;
+  fit(t); save();
+});
+big.addEventListener('keydown', onKey);
+entry.addEventListener('mousedown', function (e) {
+  if (e.target.closest('button')) e.preventDefault();   // клавиатура не закрывается
+});
+$('prev').onclick = function () { step(-1); };
+$('next').onclick = function () { step(1); };
+$('done').onclick = stopEditing;
+$('newline').onclick = function () { big.focus(); insert(big, '\n'); };
+Array.prototype.forEach.call(document.querySelectorAll('[data-ins]'), function (b) {
+  b.onclick = function () { big.focus(); insert(big, b.dataset.ins); };
+});
+$('mode').onclick = function () {
+  var digits = big.getAttribute('inputmode') !== 'decimal';
+  big.setAttribute('inputmode', digits ? 'decimal' : 'text');
+  $('mode').textContent = digits ? 'АБВ' : '123';
+  big.blur(); big.focus();
+};
+
+/* ===== Окно подтверждения и отмена ===== */
+var answer = null;
+function ask(question, yesText, onYes) {
+  stopEditing();
+  if (document.activeElement) document.activeElement.blur();
+  $('question').textContent = question;
+  $('yes').textContent = yesText;
+  $('yes').classList.toggle('danger', /Удалить|Очистить|Заменить|Новый/.test(yesText));
+  answer = onYes;
+  $('app').inert = true;
+  $('modal').hidden = false;
+  $('no').focus();
+}
+function closeModal(ok) {
+  var fn = answer; answer = null;
+  $('modal').hidden = true;
+  $('app').inert = false;
+  if (ok && fn) fn();
+}
+$('yes').onclick = function () { closeModal(true); };
+$('no').onclick = function () { closeModal(false); };
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape' && !$('modal').hidden) closeModal(false);
+});
+
+var backup = null, toastTimer = 0;
+function hideToast() { $('toast').hidden = true; backup = null; }
+function destructive(message, change) {
+  var before = copy(state);
+  change(); render(); save();
+  backup = before;
+  $('toastText').textContent = message;
+  $('toast').hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(hideToast, 8000);
+}
+$('undo').onclick = function () {
+  if (!backup) return;
+  state = backup; hideToast(); render(); save();
+};
+// после нового ввода «Вернуть» не должно стирать свежие данные
+document.addEventListener('input', hideToast);
+
+/* ===== Кнопки ===== */
+function change(fn) { stopEditing(); hideToast(); fn(); render(); save(); }
+
+$('addRow').onclick = function () {
+  if (rowsCount() < MAX_DATA_ROWS) change(function () { state.cells.push(new Array(colsCount()).fill('')); });
+};
+$('addCol').onclick = function () {
+  if (colsCount() < MAX_COLS) change(function () { state.cells.forEach(function (row) { row.push(''); }); });
+};
+$('delRow').onclick = function () {
+  if (rowsCount() <= 1) return;
+  var remove = function () { state.cells.pop(); };
+  if (state.cells[rowsCount() - 1].every(function (v) { return !v.trim(); })) change(remove);
+  else ask('В последней строке есть записи. Удалить её?', 'Удалить', function () { destructive('Строка удалена', remove); });
+};
+$('delCol').onclick = function () {
+  if (colsCount() <= 2) return;
+  var remove = function () { state.cells.forEach(function (row) { row.pop(); }); };
+  if (state.cells.every(function (row) { return !row[row.length - 1].trim(); })) change(remove);
+  else ask('В последнем столбце есть записи. Удалить его?', 'Удалить', function () { destructive('Столбец удалён', remove); });
+};
+['portrait', 'landscape'].forEach(function (o) {
+  $(o).onclick = function () { change(function () { state.orientation = o; }); stage.scrollTop = 0; };
+});
+$('clear').onclick = function () {
+  ask('Стереть название и все записи? Размер таблицы останется.', 'Очистить', function () {
+    destructive('Лист очищен', function () {
+      var empty = blank(rowsCount(), colsCount());
+      empty.orientation = state.orientation; state = empty;
+    });
+  });
+};
+$('fresh').onclick = function () {
+  ask('Начать новый пустой лист 7×7? Текущие записи будут стёрты.', 'Новый лист', function () {
+    destructive('Создан новый лист', function () { state = blank(6, 7); });
+    stage.scrollTop = 0;
+  });
+};
+
+/* ===== Печать ===== */
+function encode(obj) {
+  var bytes = new TextEncoder().encode(JSON.stringify(obj)), s = '';
+  bytes.forEach(function (b) { s += String.fromCharCode(b); });
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function decode(str) {
+  var s = atob(str.replace(/-/g, '+').replace(/_/g, '/'));
+  var bytes = Uint8Array.from(s, function (ch) { return ch.charCodeAt(0); });
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+function inTelegram() { return !!(tg && tg.platform && tg.platform !== 'unknown'); }
+
+$('print').onclick = function () {
+  stopEditing(); hideToast();
+  if (document.activeElement) document.activeElement.blur();
+  if (inTelegram() && /^https?:$/.test(location.protocol)) {
+    // внутри Telegram печать обычно недоступна: переносим лист в обычный браузер
+    ask('Печать работает в обычном браузере. Открыть там этот лист? Затем нажмите «Печать / PDF» ещё раз.', 'Открыть', function () {
+      tg.openLink(location.origin + location.pathname + location.search + '#sheet=' + encode(state));
+    });
+  } else {
+    window.print();
+  }
+};
+
+/* Лист, переданный из Telegram по ссылке */
+function importFromLink() {
+  if (location.hash.indexOf('#sheet=') !== 0) return;
+  var incoming = null;
+  try { incoming = normalize(decode(location.hash.slice(7))); } catch (e) {}
+  history.replaceState(null, '', location.pathname + location.search);
+  if (!incoming || JSON.stringify(incoming) === JSON.stringify(state)) return;
+  var apply = function () { state = incoming; render(); save(); };
+  if (!hasContent(state)) apply();
+  else ask('В этом браузере уже есть заполненный лист. Заменить его листом из ссылки?', 'Заменить', function () {
+    destructive('Лист заменён', function () { state = incoming; });
+  });
+}
+window.addEventListener('hashchange', importFromLink);
+
+/* ===== Размер окна и Telegram ===== */
+function resize() {
+  var vv = window.visualViewport;
+  if (vv && vv.scale > 1.01) return;   // пользователь увеличил страницу пальцами
+  var h = vv ? vv.height : window.innerHeight;
+  if (inTelegram() && tg.viewportHeight > 0) h = Math.min(h, tg.viewportHeight);
+  var root = document.documentElement.style;
+  root.setProperty('--app-h', h + 'px');
+  root.setProperty('--app-top', (vv ? vv.offsetTop : 0) + 'px');
+  layout();
+  reveal();
+}
+window.addEventListener('resize', resize);
+if (window.visualViewport) {
+  visualViewport.addEventListener('resize', resize);
+  visualViewport.addEventListener('scroll', resize);
+}
+if (window.ResizeObserver) new ResizeObserver(function () { layout(); }).observe(stage);
+
+function initTelegram() {
+  tg = window.Telegram && window.Telegram.WebApp;
+  if (!inTelegram()) return;
+  var safely = function (version, fn) {
+    try { if (tg.isVersionAtLeast(version)) fn(); } catch (e) {}
+  };
+  try { tg.ready(); tg.expand(); } catch (e) {}
+  safely('7.7', function () { tg.disableVerticalSwipes(); });
+  safely('6.1', function () { tg.setHeaderColor('#e9edf2'); tg.setBackgroundColor('#e9edf2'); });
+  try { tg.onEvent('viewportChanged', resize); } catch (e) {}
+  resize();
+}
+
+/* SDK Telegram загружается только при запуске из Telegram,
+   поэтому в обычном браузере страница не делает внешних запросов. */
+function loadTelegram() {
+  if (window.Telegram && window.Telegram.WebApp) return initTelegram();
+  var stored = false;
+  try { stored = !!sessionStorage.getItem('__telegram__initParams'); } catch (e) {}
+  var launched = launchHash.indexOf('tgWebApp') >= 0 || 'TelegramWebviewProxy' in window || stored;
+  if (!launched) return;
+  var s = document.createElement('script');
+  s.src = 'https://telegram.org/js/telegram-web-app.js';
+  s.onload = initTelegram;
+  document.head.appendChild(s);
+}
+
+var ua = navigator.userAgent;
+if (/iP(hone|ad|od)/.test(ua) || (/Safari/.test(ua) && !/Chrome|Chromium|Android/.test(ua)))
+  document.body.classList.add('safari');
+
+window.addEventListener('pagehide', save);
+render();
+resize();
+importFromLink();
+loadTelegram();
+})();
+</script>
+</body>
+</html>
