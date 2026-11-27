@@ -36,17 +36,19 @@ button.danger.primary{background:#b42318;border-color:#b42318;color:#fff}
 #sheet{position:absolute;left:0;top:0;width:794px;height:1123px;padding:36px;background:#fff;color:#000;
   display:flex;flex-direction:column;transform-origin:0 0}
 body.landscape #sheet{width:1123px;height:794px}
-#title{flex:none;width:100%;height:52px;margin-bottom:12px;border:0;border-radius:4px;background:transparent;color:#000;
-  text-align:center;font-family:inherit;font-weight:700;font-size:28px;padding:0 8px}
-#title::placeholder{color:#a8b0bb;font-weight:400;font-size:24px}
+#title{flex:none;width:100%;height:38px;margin-bottom:8px;border:0;border-radius:4px;background:transparent;color:#000;
+  text-align:center;font-family:inherit;font-weight:700;font-size:21px;padding:0 8px}
+#title::placeholder{color:#a8b0bb;font-weight:400;font-size:19px}
 #title:focus{outline:2px solid var(--accent)}
 #grid{flex:1;min-height:0;display:grid;border-top:2px solid #111;border-left:2px solid #111}
 .cell{position:relative;min-width:0;min-height:0;overflow:hidden;display:flex;align-items:center;
   border-right:2px solid #111;border-bottom:2px solid #111;cursor:text}
-.cell textarea{display:block;width:100%;max-height:100%;margin:0;padding:1px 4px;border:0;outline:0;resize:none;overflow:hidden;
+.cell textarea{display:block;width:100%;max-height:100%;margin:0;padding:1px;border:0;outline:0;resize:none;overflow:hidden;
   background:transparent;color:#000;text-align:center;font-family:inherit;font-weight:500;line-height:1.2;
   overflow-wrap:break-word;border-radius:0}
-.cell textarea.multi{text-align:left;padding-left:8px}
+.cell textarea.multi{text-align:left;padding-left:4px}
+.cell.head{justify-content:center;font-weight:700;font-size:14px;cursor:default;user-select:none}
+.cell textarea.name{text-align:left;padding-left:8px}
 .cell.active{background:#e3efff;box-shadow:inset 0 0 0 3px var(--accent)}
 .cell.over textarea{overflow-y:auto}
 .cell.over::after{content:"";position:absolute;top:0;right:0;border-top:12px solid #d92d20;border-left:12px solid transparent}
@@ -83,7 +85,7 @@ body.landscape #sheet{width:1123px;height:794px}
   border:2px solid var(--accent);border-radius:10px;resize:none;background:#fff;color:#000}
 .entry-keys{display:grid;grid-template-columns:1.3fr .7fr .7fr 1.5fr 1.2fr;gap:6px;margin-top:6px}
 .entry-keys button{padding:4px 2px;font-size:15px}
-body.compact .cell{cursor:pointer}
+body.compact .cell:not(.head){cursor:pointer}
 body.compact .cell textarea{pointer-events:none}
 body.editing #panel{display:none}
 @media (min-width:900px), (min-width:560px) and (max-height:600px) and (orientation:landscape){ body.editing #app{flex-direction:column} }
@@ -183,7 +185,9 @@ body.editing #panel{display:none}
 'use strict';
 
 var KEY = 'a4-schedule-v1';
-var MAX_ROWS = 30, MAX_COLS = 12, MAX_TEXT = 300;
+var MAX_ROWS = 30, MAX_COLS = 26, MAX_TEXT = 300;   // столбцы считаются вместе с «Имя»
+var MAX_DATA_ROWS = MAX_ROWS - 1;           // верхняя строка с цифрами заполняется сама
+var NAME_WIDTH = 150, HEAD_HEIGHT = 40;     // постоянная ширина столбца имён и высота строки цифр
 var $ = function (id) { return document.getElementById(id); };
 var sheet = $('sheet'), grid = $('grid'), stage = $('stage'), holder = $('holder'),
     titleInput = $('title'), big = $('big'), entry = $('entry');
@@ -198,17 +202,28 @@ var launchHash = location.hash;
 function blank(rows, cols) {
   var cells = [];
   for (var r = 0; r < rows; r++) cells.push(new Array(cols).fill(''));
-  return { title: '', orientation: 'portrait', cells: cells };
+  return { v: 3, title: '', orientation: 'portrait', cells: cells };
 }
 
 function normalize(data) {
   if (!data || !Array.isArray(data.cells) || !data.cells.length || !Array.isArray(data.cells[0])) return null;
-  var rows = Math.min(data.cells.length, MAX_ROWS);
-  var cols = Math.max(1, Math.min(data.cells[0].length, MAX_COLS));
+  var source = data.cells, cols = source[0].length;
+  if (data.v !== 3) {
+    // лист из прежней версии: пустая верхняя строка заменяется цифрами,
+    // а строка с записями остаётся и сдвигается под цифры
+    var replaceable = [].concat(source[0]).every(function (v, c) {
+      v = String(v || '').trim();
+      return !v || v === String(c) || (c === 0 && (v === '№' || v.toLowerCase() === 'имя'));
+    });
+    if (replaceable) source = source.slice(1);
+    if (data.v === 2) cols++;   // вместо прежнего столбца номеров добавляется пустой справа
+  }
+  var rows = Math.max(1, Math.min(source.length, MAX_ROWS));
+  cols = Math.max(2, Math.min(cols, MAX_COLS));
   var out = blank(rows, cols);
   for (var r = 0; r < rows; r++)
     for (var c = 0; c < cols; c++) {
-      var v = data.cells[r] && data.cells[r][c];
+      var v = source[r] && source[r][c];
       out.cells[r][c] = typeof v === 'string' ? v.slice(0, MAX_TEXT) : '';
     }
   out.title = typeof data.title === 'string' ? data.title.slice(0, 80) : '';
@@ -225,7 +240,7 @@ function save() {
   catch (e) { $('warn').hidden = false; }
 }
 
-var state = load() || blank(7, 7);
+var state = load() || blank(6, 7);
 var copy = function (o) { return JSON.parse(JSON.stringify(o)); };
 var rowsCount = function () { return state.cells.length; };
 var colsCount = function () { return state.cells[0].length; };
@@ -234,6 +249,9 @@ var hasContent = function (s) {
 };
 
 /* ===== Отрисовка ===== */
+function place(r, c) {
+  return 'Строка ' + (r + 1) + ', ' + (c ? 'столбец ' + c : 'имя');
+}
 function render() {
   var rows = rowsCount(), cols = colsCount();
   var land = state.orientation === 'landscape';
@@ -242,27 +260,34 @@ function render() {
   $('portrait').setAttribute('aria-pressed', String(!land));
   $('landscape').setAttribute('aria-pressed', String(land));
 
-  grid.style.gridTemplateColumns = 'repeat(' + cols + ',minmax(0,1fr))';
-  grid.style.gridTemplateRows = 'repeat(' + rows + ',minmax(0,1fr))';
+  grid.style.gridTemplateColumns = NAME_WIDTH + 'px repeat(' + (cols - 1) + ',minmax(0,1fr))';
+  grid.style.gridTemplateRows = HEAD_HEIGHT + 'px repeat(' + rows + ',minmax(0,1fr))';
   grid.textContent = '';
   inputs = [];
+  for (var h = 0; h < cols; h++) {        // верхняя строка: «Имя», 1, 2, 3…
+    var head = document.createElement('div');
+    head.className = 'cell head';
+    head.textContent = h ? h : 'Имя';
+    grid.appendChild(head);
+  }
   for (var r = 0; r < rows; r++) {
     inputs.push([]);
     for (var c = 0; c < cols; c++) {
       var cell = document.createElement('div');
       cell.className = 'cell';
       var t = document.createElement('textarea');
+      if (!c) t.className = 'name';
       t.rows = 1; t.maxLength = MAX_TEXT; t.value = state.cells[r][c];
       t.dataset.r = r; t.dataset.c = c;
       t.spellcheck = false; t.autocomplete = 'off';
-      t.setAttribute('aria-label', 'Строка ' + (r + 1) + ', столбец ' + (c + 1));
+      t.setAttribute('aria-label', place(r, c));
       cell.appendChild(t); grid.appendChild(cell); inputs[r].push(t);
     }
   }
   titleInput.value = state.title;
-  $('size').textContent = 'Сейчас: строк ' + rows + ', столбцов ' + cols;
-  $('addRow').disabled = rows >= MAX_ROWS; $('delRow').disabled = rows <= 1;
-  $('addCol').disabled = cols >= MAX_COLS; $('delCol').disabled = cols <= 1;
+  $('size').textContent = 'Сейчас: строк ' + (rows + 1) + ', столбцов ' + cols;
+  $('addRow').disabled = rows >= MAX_DATA_ROWS; $('delRow').disabled = rows <= 1;
+  $('addCol').disabled = cols >= MAX_COLS; $('delCol').disabled = cols <= 2;
   layout();
   fitAll();
 }
@@ -270,7 +295,7 @@ function render() {
 /* Подбор размера шрифта, чтобы текст помещался в ячейку */
 var ruler = document.createElement('canvas').getContext('2d');
 function fit(t) {
-  var cell = t.parentNode, w = cell.clientWidth - 12, h = cell.clientHeight;
+  var cell = t.parentNode, w = cell.clientWidth - (t.classList.contains('name') ? 12 : 3), h = cell.clientHeight;
   t.classList.toggle('multi', t.value.indexOf('\n') >= 0);
   cell.classList.remove('over');
   var family = getComputedStyle(t).fontFamily;
@@ -324,7 +349,7 @@ function go(r, c) {
     entry.hidden = false;
     document.body.classList.add('editing');
     big.value = state.cells[r][c];
-    $('where').textContent = 'Строка ' + (r + 1) + ', столбец ' + (c + 1);
+    $('where').textContent = place(r, c);
     big.focus({ preventScroll: true });
     big.select();
     setTimeout(reveal, 60);
@@ -408,7 +433,7 @@ grid.addEventListener('focusout', function (e) {
 });
 grid.addEventListener('click', function (e) {
   var cell = e.target.closest('.cell');
-  if (!cell) return;
+  if (!cell || cell.classList.contains('head')) return;
   var t = cell.firstChild;
   // повторный щелчок по активной ячейке ставит курсор, первый выделяет всё
   if (compact || e.target !== t) go(+t.dataset.r, +t.dataset.c);
@@ -498,7 +523,7 @@ document.addEventListener('input', hideToast);
 function change(fn) { stopEditing(); hideToast(); fn(); render(); save(); }
 
 $('addRow').onclick = function () {
-  if (rowsCount() < MAX_ROWS) change(function () { state.cells.push(new Array(colsCount()).fill('')); });
+  if (rowsCount() < MAX_DATA_ROWS) change(function () { state.cells.push(new Array(colsCount()).fill('')); });
 };
 $('addCol').onclick = function () {
   if (colsCount() < MAX_COLS) change(function () { state.cells.forEach(function (row) { row.push(''); }); });
@@ -510,7 +535,7 @@ $('delRow').onclick = function () {
   else ask('В последней строке есть записи. Удалить её?', 'Удалить', function () { destructive('Строка удалена', remove); });
 };
 $('delCol').onclick = function () {
-  if (colsCount() <= 1) return;
+  if (colsCount() <= 2) return;
   var remove = function () { state.cells.forEach(function (row) { row.pop(); }); };
   if (state.cells.every(function (row) { return !row[row.length - 1].trim(); })) change(remove);
   else ask('В последнем столбце есть записи. Удалить его?', 'Удалить', function () { destructive('Столбец удалён', remove); });
@@ -528,7 +553,7 @@ $('clear').onclick = function () {
 };
 $('fresh').onclick = function () {
   ask('Начать новый пустой лист 7×7? Текущие записи будут стёрты.', 'Новый лист', function () {
-    destructive('Создан новый лист', function () { state = blank(7, 7); });
+    destructive('Создан новый лист', function () { state = blank(6, 7); });
     stage.scrollTop = 0;
   });
 };
